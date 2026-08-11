@@ -74,6 +74,18 @@ export function AppShell() {
   const handleBackgroundTaskDone = useCallback(() => {
     if (soundEnabledRef.current) playDoneSound();
   }, [playDoneSound, soundEnabledRef]);
+
+  // Local deployment: browsers only permit the notification prompt from a user
+  // gesture, so request once on the next click (needed for the session-end
+  // browser notifications to actually show up).
+  useEffect(() => {
+    if (!("Notification" in window) || Notification.permission !== "default") return;
+    const requestPermission = () => {
+      void Notification.requestPermission().catch(() => {});
+    };
+    window.addEventListener("pointerdown", requestPermission, { once: true, capture: true });
+    return () => window.removeEventListener("pointerdown", requestPermission, true);
+  }, []);
   const [selectedSession, setSelectedSession] = useState<SessionInfo | null>(null);
   const [runningSessionIds, setRunningSessionIds] = useState<Set<string>>(() => new Set());
   const handleRunningSessionIdsChange = useCallback((ids: Set<string>) => {

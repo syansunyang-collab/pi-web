@@ -1,6 +1,6 @@
 {
   "name": "@agegr/pi-web",
-  "version": "0.8.8",
+  "version": "0.8.8-local.1",
   "description": "Web UI for the pi coding agent",
   "homepage": "https://github.com/agegr/pi-web#readme",
   "repository": {
@@ -48,7 +48,7 @@
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
     "remark-frontmatter": "^5.0.0",
-    "undici": "8.5.0"
+    "undici": "8.10.0"
   },
   "devDependencies": {
     "@lobehub/icons": "^5.6.0",
