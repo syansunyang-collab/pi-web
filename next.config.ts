@@ -10,6 +10,9 @@ try {
 } catch { /* package not found, use default */ }
 
 const nextConfig: NextConfig = {
+  // Keep production output tracing inside the local deployment. On Windows,
+  // tracing the user profile can encounter locked Application Insights files.
+  outputFileTracingRoot: __dirname,
   serverExternalPackages: [
     "undici",
     "@earendil-works/pi-coding-agent",

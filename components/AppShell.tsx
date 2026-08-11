@@ -56,6 +56,18 @@ export function AppShell() {
   const { locale, setLocale, t: translate, supportedLocales } = useI18n();
   const isMobile = useIsMobile();
   useViewportHeight();
+
+  // This local-only deployment enables completion notifications. Browsers only
+  // permit the prompt from a user gesture, so request once on the next click.
+  useEffect(() => {
+    if (!("Notification" in window) || Notification.permission !== "default") return;
+    const requestPermission = () => {
+      void Notification.requestPermission().catch(() => {});
+    };
+    window.addEventListener("pointerdown", requestPermission, { once: true, capture: true });
+    return () => window.removeEventListener("pointerdown", requestPermission, true);
+  }, []);
+
   const [selectedSession, setSelectedSession] = useState<SessionInfo | null>(null);
   // When user clicks +, we only store the cwd — no fake session id
   const [newSessionCwd, setNewSessionCwd] = useState<string | null>(null);
