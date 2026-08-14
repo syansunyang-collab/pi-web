@@ -11,6 +11,7 @@ import {
 import { resolveVisibleModels, selectInitialModelScope } from "@/lib/model-scope";
 import { getAllowedFileRoots, isExistingFilePathAllowed } from "@/lib/file-access";
 import { projectTrustReloadOptions } from "@/lib/project-trust";
+import { withoutRelayMeshExtensions } from "@/lib/extension-filter";
 
 export const dynamic = "force-dynamic";
 
@@ -40,6 +41,9 @@ async function loadModels(cwd: string): Promise<ModelsData> {
   const services = await createAgentSessionServices({
     cwd,
     agentDir,
+    // Local patch: keep relay-mesh extensions (remote-pi) out of this process
+    // (see lib/extension-filter.ts).
+    resourceLoaderOptions: { extensionsOverride: withoutRelayMeshExtensions },
     ...(trustReloadOptions ? { resourceLoaderReloadOptions: trustReloadOptions } : {}),
   });
   const modelError = services.modelRuntime.getError();
