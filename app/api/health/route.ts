@@ -7,6 +7,6 @@ export async function GET() {
     name: "Pi Web",
     version: process.env.NEXT_PUBLIC_APP_VERSION ?? "unknown",
     piVersion: process.env.NEXT_PUBLIC_PI_VERSION ?? "unknown",
-    deployment: "local-tool-result-images-v1",
+    deployment: "local-tool-result-images-v2",
   });
 }
