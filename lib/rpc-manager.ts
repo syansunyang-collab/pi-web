@@ -1604,6 +1604,10 @@ export async function startRpcSession(
     const services = await createAgentSessionServices({
       cwd: sessionCwd,
       agentDir,
+      // Local patch: remote-pi holds process-global relay state; loading it in
+      // this multi-session host leaks one workspace's stream into another's
+      // phone room. Filter it out (see lib/extension-filter.ts).
+      resourceLoaderOptions: { extensionsOverride: withoutRelayMeshExtensions },
       ...(trustReloadOptions ? { resourceLoaderReloadOptions: trustReloadOptions } : {}),
     });
     const scope = await resolveVisibleModels(
