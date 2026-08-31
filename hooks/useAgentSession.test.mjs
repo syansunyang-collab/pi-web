@@ -269,6 +269,19 @@ test("delegates event stream readiness and hides an empty agent phase", () => {
   assert.match(chatWindowSource, /return null;/);
 });
 
+test("existing-session prompts send before attaching the event stream (idle wrapper is started by the POST)", () => {
+  const sendSource = source.slice(
+    source.indexOf("const handleSend = useCallback"),
+    source.indexOf("const executeBash = useCallback"),
+  );
+  const existingBranch = sendSource.slice(sendSource.indexOf("} else if (session) {"));
+  const promptIndex = existingBranch.indexOf('type: "prompt"');
+  const maintainIndex = existingBranch.indexOf("maintainEventsConnected(session.id)");
+  assert.ok(promptIndex > 0, "existing-session branch sends a prompt");
+  assert.ok(maintainIndex > promptIndex, "event stream attaches after the prompt request");
+  assert.doesNotMatch(existingBranch.slice(0, promptIndex), /await ensureEventsConnected\(session\.id\)/);
+});
+
 test("uses one absolute agent-readiness deadline instead of a five-second transport deadline", () => {
   assert.match(source, /EVENT_STREAM_READY_TIMEOUT_MS = 60_000/);
   assert.doesNotMatch(source, /EVENT_STREAM_OPEN_TIMEOUT_MS/);

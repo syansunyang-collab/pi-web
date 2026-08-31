@@ -1344,13 +1344,18 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         promoteNewSession(1, message);
       } else if (session) {
         sentSessionId = session.id;
-        await ensureEventsConnected(session.id);
+        // The events route refuses to start a writer for an idle session
+        // (404 not_running), so connecting first would spin until timeout.
+        // Send the prompt first: it starts the wrapper, then the stream can
+        // attach. Missed early events are recovered by the connected handshake
+        // and waitForPromptSettlement.
         promptRequestStarted = true;
         await sendAgentCommand(session.id, {
           type: "prompt",
           message,
           ...(piImages?.length ? { images: piImages } : {}),
         });
+        maintainEventsConnected(session.id);
       } else {
         throw new Error("No active session for the prompt");
       }

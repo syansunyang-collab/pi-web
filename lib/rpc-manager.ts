@@ -1565,6 +1565,7 @@ export class AgentSessionWrapper {
 declare global {
   var __piSessions: Map<string, AgentSessionWrapper> | undefined;
   var __piStartLocks: Map<string, Promise<{ session: AgentSessionWrapper; realSessionId: string }>> | undefined;
+  var __piSessionPathIndex: Map<string, string> | undefined;
   var __piStartingSessionCwds: Map<string, number> | undefined;
 }
 
@@ -1585,12 +1586,35 @@ function getRegistry(): Map<string, AgentSessionWrapper> {
   return globalThis.__piSessions;
 }
 
-function registerRpcWrapper(wrapper: AgentSessionWrapper): void {
+export function registerRpcWrapper(wrapper: AgentSessionWrapper): void {
   const registry = getRegistry();
+  const pathIndex = getSessionPathIndex();
   const sessionId = wrapper.sessionId;
+  const sessionPath = wrapper.sessionFile ? canonicalSessionPath(wrapper.sessionFile) : undefined;
   if (wrapper.sessionFile) cacheSessionPath(sessionId, wrapper.sessionFile);
-  wrapper.onDestroy(() => registry.delete(sessionId));
+  wrapper.onDestroy(() => {
+    // A newer wrapper may already own this id/path (same-id rebuild, direct
+    // destroy racing registration). Deferred dispose must not evict it.
+    if (registry.get(sessionId) !== wrapper) return;
+    registry.delete(sessionId);
+    if (sessionPath && pathIndex.get(sessionPath) === sessionId) {
+      pathIndex.delete(sessionPath);
+    }
+  });
   registry.set(sessionId, wrapper);
+  if (sessionPath) {
+    // Never steal the index from a different live owner (e.g. a directly
+    // registered subagent wrapper); keeping it pointed at a live wrapper is
+    // what lets alias lookups dedup instead of opening the file again.
+    const currentOwner = getLivePathOwner(sessionPath);
+    if (currentOwner && currentOwner !== wrapper) {
+      console.error(
+        `[pi-web] session file already owned by live wrapper ${currentOwner.sessionId}; not indexing ${sessionId}`,
+      );
+    } else {
+      pathIndex.set(sessionPath, sessionId);
+    }
+  }
   wrapper.start();
   if (!wrapper.isChatOnly()) wrapper.beginExtensionBinding();
 }
@@ -1629,6 +1653,34 @@ export function abortSubagent(sessionId: string) {
 function getLocks(): Map<string, Promise<{ session: AgentSessionWrapper; realSessionId: string }>> {
   if (!globalThis.__piStartLocks) globalThis.__piStartLocks = new Map();
   return globalThis.__piStartLocks;
+}
+
+function getSessionPathIndex(): Map<string, string> {
+  if (!globalThis.__piSessionPathIndex) globalThis.__piSessionPathIndex = new Map();
+  return globalThis.__piSessionPathIndex;
+}
+
+// Registry keys are session ids, but the same file can be reached through
+// aliased paths ("."/".." segments, Windows letter case). Canonicalize so
+// one file maps to at most one live wrapper.
+export function canonicalSessionPath(filePath: string): string {
+  const resolvedPath = resolve(filePath);
+  return process.platform === "win32" ? resolvedPath.toLowerCase() : resolvedPath;
+}
+
+// An index entry is authoritative only while the indexed wrapper is alive
+// and still owns this exact file; a session can be re-registered under a
+// different path, leaving the old entry stale. Stale entries self-evict here.
+function getLivePathOwner(canonicalPath: string): AgentSessionWrapper | undefined {
+  const pathIndex = getSessionPathIndex();
+  const indexedSessionId = pathIndex.get(canonicalPath);
+  if (!indexedSessionId) return undefined;
+  const indexed = getRegistry().get(indexedSessionId);
+  if (indexed?.isAlive() && indexed.sessionFile && canonicalSessionPath(indexed.sessionFile) === canonicalPath) {
+    return indexed;
+  }
+  pathIndex.delete(canonicalPath);
+  return undefined;
 }
 
 function normalizeRpcCwd(cwd: string): string {
@@ -1859,11 +1911,23 @@ export async function startRpcSession(
     : validateSessionToolSelection(options.toolNames);
   const registry = getRegistry();
   const locks = getLocks();
+  const pathIndex = getSessionPathIndex();
+  const canonicalPath = sessionFile ? canonicalSessionPath(sessionFile) : undefined;
+  const lockKey = canonicalPath ?? sessionId;
 
   const existing = registry.get(sessionId);
   if (existing?.isAlive()) return { session: existing, realSessionId: sessionId };
 
-  const inflight = locks.get(sessionId);
+  // The file may already be owned by a live wrapper under a different session
+  // id (path alias, letter-case variant, or a reopened real id).
+  if (canonicalPath) {
+    const indexed = getLivePathOwner(canonicalPath);
+    if (indexed && indexed.sessionId !== sessionId) {
+      return { session: indexed, realSessionId: indexed.sessionId };
+    }
+  }
+
+  const inflight = locks.get(lockKey);
   if (inflight) return inflight;
 
   let sessionManager: SessionManager;
@@ -2034,10 +2098,10 @@ export async function startRpcSession(
 
     return { session: wrapper, realSessionId };
   })().finally(() => {
-    locks.delete(sessionId);
+    locks.delete(lockKey);
     finishStartingSession();
   });
 
-  locks.set(sessionId, starting);
+  locks.set(lockKey, starting);
   return starting;
 }
